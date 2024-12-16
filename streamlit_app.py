@@ -67,13 +67,18 @@ def render_download_button(content, file_name, mime_type="text/plain"):
     )
 
 
-def main():
+def main()
     # Set page configuration
     st.set_page_config(
-        page_title="Email Generator & Paraphraser App",
-        page_icon="📧",
+        page_title="Email Writer & Paraphraser",
+        page_icon="✉️",
         layout="wide",
     )
+
+    # Title
+    st.title("✉️ Email Writer & Paraphraser 🛠️")
+    st.markdown("Create professional emails or paraphrase text with the help of Gemini AI.")
+    
 
     # Fetch API Key from environment variables
     api_key = os.environ.get("GEMINI_API_KEY", "")
