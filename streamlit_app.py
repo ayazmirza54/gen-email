@@ -3,7 +3,7 @@ import streamlit as st
 import google.generativeai as genai
 
 
-class GeminiEmailParaphraseInterface:
+class GeminiInterface:
     def __init__(self, api_key, model_name="gemini-2.0-flash-exp"):
         # Configure API
         genai.configure(api_key=api_key)
@@ -21,128 +21,130 @@ class GeminiEmailParaphraseInterface:
         self.model = genai.GenerativeModel(
             model_name=model_name,
             generation_config=self.generation_config,
-            system_instruction=(
-                "You are an expert assistant specializing in paraphrasing text in various tones."
-                "You adapt to the specified tone (e.g., formal, creative, simple) and output clear, readable content."
-                "Responses must be Markdown formatted."
-            ),
         )
 
-        # Initialize chat session
-        self.chat_session = None
-
-    def start_chat(self):
+    def generate_email(self, prompt):
         """
-        Start a new chat session for paraphrasing.
+        Generate email content based on the prompt.
         """
-        self.chat_session = self.model.start_chat(history=[])
+        response = self.model.start_chat(history=[]).send_message(
+            f"Generate a professional email based on the following prompt:\n\n{prompt}"
+        )
+        return response.text
 
     def paraphrase_text(self, text, tone="neutral"):
         """
         Paraphrase the given text with a specified tone.
-
-        :param text: Text to paraphrase
-        :param tone: Tone for paraphrasing
-        :return: Paraphrased text (Markdown formatted)
         """
-        if not self.chat_session:
-            self.start_chat()
-
-        response = self.chat_session.send_message(
+        response = self.model.start_chat(history=[]).send_message(
             f"Paraphrase the following text with a '{tone}' tone and return it in Markdown format:\n\n{text}"
         )
         return response.text
 
 
+def render_copy_to_clipboard(text):
+    """
+    Render a button for copying text to the clipboard.
+    """
+    copy_code = f"""
+        <script>
+            navigator.clipboard.writeText(`{text.replace("`", "\\`")}`);
+            alert('Copied to clipboard!');
+        </script>
+    """
+    st.button("📋 Copy to Clipboard", on_click=st.markdown, args=(copy_code,))
+
+
+def render_download_button(content, file_name, mime_type="text/plain"):
+    """
+    Render a download button for content.
+    """
+    st.download_button(
+        label="📥 Download",
+        data=content,
+        file_name=file_name,
+        mime=mime_type,
+    )
+
+
 def main():
     # Set page configuration
     st.set_page_config(
-        page_title="Paraphraser App",
-        page_icon="🔄",
+        page_title="Email Generator & Paraphraser App",
+        page_icon="📧",
         layout="wide",
     )
-
-    # Title
-    st.title("🔄 Paraphraser App")
-    st.markdown("Paraphrase text with customizable tone options using Gemini AI.")
-
-    # Sidebar for API key
-    st.sidebar.header("Configuration")
 
     # Fetch API Key from environment variables
     api_key = os.environ.get("GEMINI_API_KEY", "")
 
     if not api_key:
-        st.sidebar.error("API key not found in environment variables! Set GEMINI_API_KEY.")
+        st.error("API key not found in environment variables! Set GEMINI_API_KEY.")
         return
 
-    # Initialize session state for Gemini interface
-    if 'gemini_interface' not in st.session_state:
-        st.session_state.gemini_interface = GeminiEmailParaphraseInterface(api_key)
+    # Initialize Gemini Interface
+    gemini_interface = GeminiInterface(api_key)
 
-    # Paraphrasing Section
-    st.subheader("🔄 Paraphrase Text")
-    text_to_paraphrase = st.text_area(
-        "Enter text to paraphrase",
-        placeholder="Paste or type the text you want paraphrased here."
-    )
+    # Tabs for Email Generator and Paraphraser
+    tab1, tab2 = st.tabs(["📧 Email Generator", "🔄 Paraphraser"])
 
-    # Tone selector
-    predefined_tones = [
-        "neutral", "fluent", "academic", "natural", "formal",
-        "simple", "creative", "expand", "shorten"
-    ]
-    tone = st.selectbox(
-        "Select a tone",
-        options=predefined_tones,
-        index=0,
-    )
+    with tab1:
+        st.subheader("📧 Email Generator")
+        email_prompt = st.text_area(
+            "Enter your email prompt",
+            placeholder="Provide details about the email you want to generate (e.g., purpose, tone, audience)...",
+        )
 
-    custom_tone = st.text_input(
-        "Or specify a custom tone",
-        placeholder="E.g., persuasive, friendly, assertive"
-    )
+        if st.button("Generate Email"):
+            if email_prompt.strip():
+                with st.spinner("Generating email..."):
+                    email_content = gemini_interface.generate_email(email_prompt)
+                st.markdown("### Generated Email")
+                st.markdown(email_content, unsafe_allow_html=True)
+                render_download_button(email_content, "generated_email.md", "text/markdown")
+                render_copy_to_clipboard(email_content)
+            else:
+                st.warning("Please enter a valid email prompt.")
 
-    # Determine final tone
-    selected_tone = custom_tone.strip() if custom_tone.strip() else tone
+    with tab2:
+        st.subheader("🔄 Paraphraser")
+        text_to_paraphrase = st.text_area(
+            "Enter text to paraphrase",
+            placeholder="Paste or type the text you want paraphrased here."
+        )
 
-    if st.button("Paraphrase"):
-        if text_to_paraphrase.strip():
-            try:
+        # Tone selector
+        predefined_tones = [
+            "neutral", "fluent", "academic", "natural", "formal",
+            "simple", "creative", "expand", "shorten"
+        ]
+        tone = st.selectbox(
+            "Select a tone",
+            options=predefined_tones,
+            index=0,
+        )
+
+        custom_tone = st.text_input(
+            "Or specify a custom tone",
+            placeholder="E.g., persuasive, friendly, assertive"
+        )
+
+        # Determine final tone
+        selected_tone = custom_tone.strip() if custom_tone.strip() else tone
+
+        if st.button("Paraphrase Text"):
+            if text_to_paraphrase.strip():
                 with st.spinner(f"Paraphrasing text with a '{selected_tone}' tone..."):
-                    paraphrased_content = st.session_state.gemini_interface.paraphrase_text(
+                    paraphrased_content = gemini_interface.paraphrase_text(
                         text_to_paraphrase,
                         tone=selected_tone
                     )
                 st.markdown("### Paraphrased Text")
-                st.markdown(paraphrased_content, unsafe_allow_html=True)  # Render Markdown
-
-                # Add Download and Copy to Clipboard buttons
-                st.download_button(
-                    label="📥 Download",
-                    data=paraphrased_content,
-                    file_name="paraphrased_text.md",
-                    mime="text/markdown"
-                )
-
-                if st.button("📋 Copy to Clipboard"):
-                    st.code(
-                        """
-                        <script>
-                        navigator.clipboard.writeText(arguments[0]);
-                        </script>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-            except Exception as e:
-                st.error(f"Error during paraphrasing: {e}")
-        else:
-            st.warning("Please enter text to paraphrase.")
-
-    # Reset button
-    if st.sidebar.button("Reset"):
-        st.session_state.gemini_interface = None
-        st.rerun()
+                st.markdown(paraphrased_content, unsafe_allow_html=True)
+                render_download_button(paraphrased_content, "paraphrased_text.md", "text/markdown")
+                render_copy_to_clipboard(paraphrased_content)
+            else:
+                st.warning("Please enter text to paraphrase.")
 
 
 if __name__ == "__main__":
