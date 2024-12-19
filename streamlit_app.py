@@ -3,6 +3,7 @@ import streamlit as st
 import google.generativeai as genai
 
 
+
 class GeminiInterface:
     def __init__(self, api_key, model_name="gemini-2.0-flash-exp"):
         # Configure API
@@ -23,15 +24,42 @@ class GeminiInterface:
             generation_config=self.generation_config,
         )
 
-    def generate_email(self, prompt):
+    def generate_email(self, prompt_data):
         """
-        Generate email content based on the prompt.
+        Generate email content based on the structured prompt.
         """
-        response = self.model.start_chat(history=[]).send_message(
-            f"Generate a professional email based on the following prompt:\n\n{prompt}"
-        )
-        return response.text
+        prompt_template = """Compose an email with the following characteristics:
 
+        *   **Purpose:** {purpose}
+        *   **Recipient:** {recipient_info}
+        *   **Sender:** {sender_name}
+        *   **Tone:** {tone}
+        *   **Subject:** {subject}
+        *   **Key Points/Content:**
+            {key_points}
+        *   **Optional Considerations (when applicable):**
+            *   **Context:** {context}
+            *   **Actions Required:** {actions}
+            *   **Attachments:** {attachments}
+            *   **Desired Length:** {length}
+
+        Write the email including this information, with an appropriate greeting and closing, considering the desired tone. 
+        """
+
+        final_prompt = prompt_template.format(**prompt_data)
+
+        chat = self.model.start_chat(history=[]) #start new session
+        try:
+           response = chat.send_message(final_prompt)
+           if response.candidates and response.candidates[0].finish_reason == "RECITATION":
+               print("RECITATION STOPPED")
+               return None  # Indicate failure, you may want to retry here.
+           else:
+               return response.text
+        except genai.types.generation_types.StopCandidateException as e:
+           print(f"Error: {e}")
+           return None # Indicate failure
+        
     def paraphrase_text(self, text, tone="neutral"):
         """
         Paraphrase the given text with a specified tone.
@@ -40,19 +68,6 @@ class GeminiInterface:
             f"Paraphrase the following text with a '{tone}' tone and return it in Markdown format:\n\n{text}"
         )
         return response.text
-
-
-def render_copy_to_clipboard(text):
-    """
-    Render a button for copying text to the clipboard.
-    """
-    copy_code = f"""
-        <script>
-            navigator.clipboard.writeText(`{text.replace("`", "\\`")}`);
-            alert('Copied to clipboard!');
-        </script>
-    """
-    st.button("📋 Copy to Clipboard", on_click=st.markdown, args=(copy_code,))
 
 
 def render_download_button(content, file_name, mime_type="text/plain"):
@@ -95,21 +110,44 @@ def main():
 
     with tab1:
         st.subheader("📧 Email Generator")
-        email_prompt = st.text_area(
-            "Enter your email prompt",
-            placeholder="Provide details about the email you want to generate (e.g., purpose, tone, audience)...",
-        )
+        st.markdown("Please provide the following details for your email:")
+         # Input fields for the structured prompt
+        purpose = st.text_input("Purpose", placeholder="e.g. Schedule a meeting")
+        recipient_info = st.text_input("Recipient", placeholder="e.g. John Doe, john@example.com")
+        sender_name = st.text_input("Sender name", placeholder="e.g. Jane Doe")
+        tone = st.text_input("Tone", placeholder="e.g. professional and polite")
+        subject = st.text_input("Subject", placeholder="e.g. Meeting Request")
+        key_points = st.text_area("Key points (each on a new line)", placeholder="e.g. \n - Confirm availability \n - Discuss the project \n - Assign tasks")
+        context = st.text_input("Context (Optional)", placeholder="Background information")
+        actions = st.text_input("Actions (Optional)", placeholder="e.g. Please confirm by...")
+        attachments = st.text_input("Attachments (Optional)", placeholder="e.g. file1.pdf, file2.docx")
+        length = st.text_input("Desired Length (Optional)", placeholder="short, medium, or long")
 
         if st.button("Generate Email"):
-            if email_prompt.strip():
+            if any([purpose.strip(), recipient_info.strip(), sender_name.strip(), tone.strip(), subject.strip(), key_points.strip()]):
+                prompt_data = {
+                    "purpose": purpose,
+                    "recipient_info": recipient_info,
+                    "sender_name": sender_name,
+                    "tone": tone,
+                    "subject": subject,
+                    "key_points": key_points,
+                    "context": context,
+                    "actions": actions,
+                    "attachments": attachments,
+                    "length": length,
+                }
                 with st.spinner("Generating email..."):
-                    email_content = gemini_interface.generate_email(email_prompt)
-                st.markdown("### Generated Email")
-                st.markdown(email_content, unsafe_allow_html=True)
-                render_download_button(email_content, "generated_email.md", "text/markdown")
-                render_copy_to_clipboard(email_content)
+                   email_content = gemini_interface.generate_email(prompt_data)
+                if email_content:
+                     st.markdown("### Generated Email")
+                     st.markdown(email_content, unsafe_allow_html=True)
+                     render_download_button(email_content, "generated_email.md", "text/markdown")
+                else:
+                   st.error("Email generation failed due to recitation issues or an error. Please adjust the prompts.")
+
             else:
-                st.warning("Please enter a valid email prompt.")
+                st.warning("Please provide required details for the email (Purpose, Recipient, Sender, Tone, Subject, and Key Points).")
 
     with tab2:
         st.subheader("🔄 Paraphraser")
@@ -147,7 +185,6 @@ def main():
                 st.markdown("### Paraphrased Text")
                 st.markdown(paraphrased_content, unsafe_allow_html=True)
                 render_download_button(paraphrased_content, "paraphrased_text.md", "text/markdown")
-                render_copy_to_clipboard(paraphrased_content)
             else:
                 st.warning("Please enter text to paraphrase.")
 
